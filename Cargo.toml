@@ -1,5 +1,5 @@
 [package]
-name = "bevy_template" # TODO: change this to your project name. This is the name of the binary that will be produced and should also be updated in the release github action.
+name = "bevy_pong"
 version = "0.1.0"
 edition = "2021"
 
