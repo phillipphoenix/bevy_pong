@@ -4,13 +4,14 @@ fn main() {
     App::new()
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
         .add_plugins(DefaultPlugins)
-        .add_startup_systems((setup_camera, setup_players, setup_ball))
+        .add_startup_systems((setup_camera, setup_players, setup_ball, setup_text))
         .add_systems(
             (
                 player_input_system,
                 keep_player_inside_bounds,
                 ball_movement,
                 ball_bounce,
+                scoring,
             )
                 .chain(),
         )
@@ -30,7 +31,10 @@ const BALL_SPEED_INCREASE: f32 = 25.0;
 // --- COMPONENTS --- //
 
 #[derive(Component)]
-struct Player;
+struct Player {
+    id: i8,
+    score: i32,
+}
 
 enum PlayerInputType {
     Arrows,
@@ -45,6 +49,11 @@ struct Ball {
     velocity: Vec2,
     speed: f32,
     increase_speed_timer: Timer,
+}
+
+#[derive(Component)]
+struct ScoreText {
+    player_id: i8,
 }
 
 // --- SYSTEMS --- //
@@ -72,7 +81,10 @@ fn setup_players(mut commands: Commands, windows: Query<&Window>) {
             },
             ..Default::default()
         })
-        .insert((Player, PlayerInput(PlayerInputType::WASD)));
+        .insert((
+            Player { id: 1, score: 0 },
+            PlayerInput(PlayerInputType::WASD),
+        ));
 
     // Player 2.
     commands
@@ -85,7 +97,10 @@ fn setup_players(mut commands: Commands, windows: Query<&Window>) {
             },
             ..Default::default()
         })
-        .insert((Player, PlayerInput(PlayerInputType::Arrows)));
+        .insert((
+            Player { id: 2, score: 0 },
+            PlayerInput(PlayerInputType::Arrows),
+        ));
 }
 
 fn setup_ball(mut commands: Commands) {
@@ -105,6 +120,48 @@ fn setup_ball(mut commands: Commands) {
             velocity: Vec2::new(1.0, 1.0),
             speed: BALL_BASE_SPEED,
             increase_speed_timer: Timer::from_seconds(10.0, TimerMode::Repeating),
+        });
+}
+
+fn setup_text(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let text_style = TextStyle {
+        font: asset_server.load("fonts/PressStart2P/PressStart2P-Regular.ttf"),
+        font_size: 30.0,
+        color: Color::WHITE,
+    };
+
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                size: Size::width(Val::Percent(100.0)),
+                justify_content: JustifyContent::SpaceBetween,
+                padding: UiRect::all(Val::Px(10.0)),
+                ..default()
+            },
+            ..default()
+        })
+        .with_children(|parent| {
+            // Player 1 score.
+            parent
+                .spawn(
+                    TextBundle::from_sections([
+                        TextSection::new("P1 - ", text_style.clone()),
+                        TextSection::new("0", text_style.clone()),
+                    ])
+                    .with_text_alignment(TextAlignment::Left),
+                )
+                .insert(ScoreText { player_id: 1 });
+
+            // Player 2 score.
+            parent
+                .spawn(
+                    TextBundle::from_sections([
+                        TextSection::new("0", text_style.clone()),
+                        TextSection::new(" - P2", text_style.clone()),
+                    ])
+                    .with_text_alignment(TextAlignment::Right),
+                )
+                .insert(ScoreText { player_id: 2 });
         });
 }
 
@@ -204,5 +261,57 @@ fn ball_bounce(
                 ball.velocity.x = -ball.velocity.x;
             }
         }
+    }
+}
+
+fn scoring(
+    mut balls: Query<(&mut Transform, &mut Ball)>,
+    mut players: Query<&mut Player>,
+    windows: Query<&Window>,
+    mut texts: Query<(&mut Text, &ScoreText)>,
+) {
+    let window = windows.single();
+    let window_size = (window.width(), window.height());
+    let window_size_half = (window_size.0 / 2.0, window_size.1 / 2.0);
+
+    let (mut ball_transform, mut ball) = balls.single_mut();
+    let ball_translation = ball_transform.translation;
+
+    // If ball is out of bounds on the right side, player 1 scores.
+    if ball_translation.x > window_size_half.0 + BALL_SIZE.0 {
+        for mut player in players.iter_mut() {
+            if player.id == 1 {
+                player.score += 1;
+
+                for (mut text, score_text) in texts.iter_mut() {
+                    if score_text.player_id == player.id {
+                        text.sections[1].value = player.score.to_string();
+                    }
+                }
+            }
+        }
+
+        // Reset ball position and speed.
+        ball.speed = BALL_BASE_SPEED;
+        ball_transform.translation = Vec3::new(0.0, 0.0, 0.0);
+    }
+
+    // If ball is out of bounds on the left side, player 2 scores.
+    if ball_translation.x < -window_size_half.0 - BALL_SIZE.0 {
+        for mut player in players.iter_mut() {
+            if player.id == 2 {
+                player.score += 1;
+
+                for (mut text, score_text) in texts.iter_mut() {
+                    if score_text.player_id == player.id {
+                        text.sections[0].value = player.score.to_string();
+                    }
+                }
+            }
+        }
+
+        // Reset ball position and speed.
+        ball.speed = BALL_BASE_SPEED;
+        ball_transform.translation = Vec3::new(0.0, 0.0, 0.0);
     }
 }
