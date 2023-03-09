@@ -38,7 +38,7 @@ struct Player {
 
 enum PlayerInputType {
     Arrows,
-    WASD,
+    Wasd,
 }
 
 #[derive(Component)]
@@ -83,7 +83,7 @@ fn setup_players(mut commands: Commands, windows: Query<&Window>) {
         })
         .insert((
             Player { id: 1, score: 0 },
-            PlayerInput(PlayerInputType::WASD),
+            PlayerInput(PlayerInputType::Wasd),
         ));
 
     // Player 2.
@@ -182,7 +182,7 @@ fn player_input_system(
                     direction -= 1.0;
                 }
             }
-            PlayerInputType::WASD => {
+            PlayerInputType::Wasd => {
                 if keyboard_input.pressed(KeyCode::W) {
                     direction += 1.0;
                 }
