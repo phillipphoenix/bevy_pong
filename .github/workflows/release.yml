@@ -58,6 +58,7 @@ jobs:
 
   # Build for Linux
   release-linux:
+    permissions: write-all
     runs-on: ubuntu-latest
 
     steps:
@@ -144,6 +145,7 @@ jobs:
 
   # Build for macOS
   # release-macos:
+  #   permissions: write-all
   #   runs-on: macOS-latest
 
   #   steps:
