@@ -1,21 +1,15 @@
 use bevy::{prelude::*, sprite::collide_aabb::collide};
 
+mod physics;
+use physics::*;
+
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
         .add_plugins(DefaultPlugins)
         .add_startup_systems((setup_camera, setup_players, setup_ball, setup_text))
-        .add_systems(
-            (
-                player_input_system,
-                keep_player_inside_bounds,
-                ball_movement,
-                ball_bounce,
-                scoring,
-            )
-                .chain(),
-        )
-        .add_system(ball_speed_increase)
+        .add_systems((player_input_system, keep_player_inside_bounds, scoring).chain())
+        .add_systems((ball_speed_increase, velocity_move, ball_bounce).chain())
         .run();
 }
 
@@ -46,7 +40,6 @@ struct PlayerInput(PlayerInputType);
 
 #[derive(Component)]
 struct Ball {
-    velocity: Vec2,
     speed: f32,
     increase_speed_timer: Timer,
 }
@@ -116,11 +109,13 @@ fn setup_ball(mut commands: Commands) {
             },
             ..Default::default()
         })
-        .insert(Ball {
-            velocity: Vec2::new(1.0, 1.0),
-            speed: BALL_BASE_SPEED,
-            increase_speed_timer: Timer::from_seconds(10.0, TimerMode::Repeating),
-        });
+        .insert((
+            Ball {
+                speed: BALL_BASE_SPEED,
+                increase_speed_timer: Timer::from_seconds(10.0, TimerMode::Repeating),
+            },
+            Velocity(Vec2::new(BALL_BASE_SPEED, BALL_BASE_SPEED)),
+        ));
 }
 
 fn setup_text(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -215,24 +210,24 @@ fn keep_player_inside_bounds(
     }
 }
 
-fn ball_movement(mut query: Query<(&mut Transform, &Ball)>, time: Res<Time>) {
-    for (mut transform, ball) in query.iter_mut() {
-        transform.translation += ball.velocity.extend(0.0) * ball.speed * time.delta_seconds();
-    }
-}
-
-fn ball_speed_increase(mut query: Query<&mut Ball>, time: Res<Time>) {
-    for mut ball in query.iter_mut() {
+fn ball_speed_increase(mut query: Query<(&mut Velocity, &mut Ball)>, time: Res<Time>) {
+    for (mut velocity, mut ball) in query.iter_mut() {
         ball.increase_speed_timer.tick(time.delta());
         if ball.increase_speed_timer.finished() {
             ball.speed += BALL_SPEED_INCREASE;
-            println!("Ball speed increased to {}", ball.speed);
+            // Calculate direction using clamp.
+            let direction = velocity
+                .0
+                .clone()
+                .clamp(Vec2::new(-1.0, -1.0), Vec2::new(1.0, 1.0));
+            velocity.0 = direction * Vec2::new(ball.speed, ball.speed);
+            println!("Ball velocity increased to {}", velocity.0);
         }
     }
 }
 
 fn ball_bounce(
-    mut query: Query<(&mut Ball, &Transform)>,
+    mut query: Query<(&mut Velocity, &Transform), With<Ball>>,
     players: Query<&Transform, With<Player>>,
     windows: Query<&Window>,
 ) {
@@ -241,12 +236,12 @@ fn ball_bounce(
     let window_size_half = (window_size.0 / 2.0, window_size.1 / 2.0);
     let ball_size_half = (BALL_SIZE.0 / 2.0, BALL_SIZE.1 / 2.0);
 
-    for (mut ball, ball_transform) in query.iter_mut() {
+    for (mut ball_velocity, ball_transform) in query.iter_mut() {
         if ball_transform.translation.y > window_size_half.1 - ball_size_half.1 {
-            ball.velocity.y = -ball.velocity.y;
+            ball_velocity.0.y = -ball_velocity.0.y;
         }
         if ball_transform.translation.y < -window_size_half.1 + ball_size_half.1 {
-            ball.velocity.y = -ball.velocity.y;
+            ball_velocity.0.y = -ball_velocity.0.y;
         }
 
         for player in players.iter() {
@@ -258,14 +253,14 @@ fn ball_bounce(
             )
             .is_some()
             {
-                ball.velocity.x = -ball.velocity.x;
+                ball_velocity.0.x = -ball_velocity.0.x;
             }
         }
     }
 }
 
 fn scoring(
-    mut balls: Query<(&mut Transform, &mut Ball)>,
+    mut balls: Query<(&mut Transform, &mut Ball, &mut Velocity)>,
     mut players: Query<&mut Player>,
     windows: Query<&Window>,
     mut texts: Query<(&mut Text, &ScoreText)>,
@@ -274,7 +269,7 @@ fn scoring(
     let window_size = (window.width(), window.height());
     let window_size_half = (window_size.0 / 2.0, window_size.1 / 2.0);
 
-    let (mut ball_transform, mut ball) = balls.single_mut();
+    let (mut ball_transform, mut ball, mut ball_velocity) = balls.single_mut();
     let ball_translation = ball_transform.translation;
 
     // If ball is out of bounds on the right side, player 1 scores.
@@ -293,6 +288,7 @@ fn scoring(
 
         // Reset ball position and speed.
         ball.speed = BALL_BASE_SPEED;
+        ball_velocity.0 = Vec2::new(ball.speed, ball.speed);
         ball_transform.translation = Vec3::new(0.0, 0.0, 0.0);
     }
 
